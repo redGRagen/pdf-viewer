@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Просмотр документа</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #eee;
+    }
+
+    #toolbar {
+      display: none;
+      position: sticky;
+      top: 0;
+      padding: 12px;
+      background: #222;
+      color: white;
+      justify-content: center;
+      align-items: center;
+      gap: 14px;
+      z-index: 2;
+    }
+
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    #status {
+      padding: 20px;
+      text-align: center;
+    }
+
+    #viewer {
+      padding: 16px;
+      text-align: center;
+    }
+
+    #viewer img {
+      display: block;
+      max-width: 100%;
+      max-height: calc(100vh - 32px);
+      height: auto;
+      object-fit: contain;
+      margin: 0 auto;
+    }
+
+    #viewer canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      margin: 0 auto 16px;
+      background: white;
+      box-shadow: 0 2px 8px #aaa;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="toolbar">
+    <button id="prev">← Назад</button>
+    <span>
+      Страница <span id="page">1</span>
+      / <span id="total">1</span>
+    </span>
+    <button id="next">Вперёд →</button>
+  </div>
+
+  <div id="status">Загружаем файл…</div>
+  <div id="viewer"></div>
+
+  <script type="module">
+    const params = new URLSearchParams(location.search);
+    const file = params.get('file') || 'document.pdf';
+
+    const status = document.getElementById('status');
+    const viewer = document.getElementById('viewer');
+    const toolbar = document.getElementById('toolbar');
+
+    const ext = file.split('.').pop().toLowerCase();
+
+    if (!/^[a-zA-Z0-9._-]+$/.test(file)) {
+      status.textContent = 'Некорректное имя файла.';
+      throw new Error('Invalid filename');
+    }
+
+    if (['png', 'jpg', 'jpeg'].includes(ext)) {
+      const img = document.createElement('img');
+      img.alt = 'Просматриваемое изображение';
+      img.src = file;
+
+      img.onload = () => {
+        status.textContent = '';
+        viewer.replaceChildren(img);
+      };
+
+      img.onerror = () => {
+        status.textContent = 'Не удалось загрузить изображение.';
+      };
+    } else if (ext === 'pdf') {
+      status.textContent = 'Загружаем PDF…';
+
+      import(
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
+      ).then(async pdfjsLib => {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+
+        const pdf = await pdfjsLib.getDocument(file).promise;
+        let current = 1;
+        let rendering = false;
+
+        toolbar.style.display = 'flex';
+
+        document.getElementById('total').textContent = pdf.numPages;
+
+        async function renderPage(n) {
+          if (rendering) return;
+          rendering = true;
+
+          try {
+            const page = await pdf.getPage(n);
+            const original = page.getViewport({ scale: 1 });
+            const scale = Math.min(
+              (window.innerWidth - 32) / original.width,
+              1.8
+            );
+            const viewport = page.getViewport({ scale });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+
+            viewer.replaceChildren(canvas);
+            await page.render({
+              canvasContext: ctx,
+              viewport
+            }).promise;
+
+            document.getElementById('page').textContent = n;
+            status.textContent = '';
+          } catch (e) {
+            status.textContent = 'Ошибка отображения страницы PDF.';
+          } finally {
+            rendering = false;
+          }
+        }
+
+        document.getElementById('prev').onclick = () => {
+          if (current > 1 && !rendering) renderPage(--current);
+        };
+
+        document.getElementById('next').onclick = () => {
+          if (current < pdf.numPages && !rendering) renderPage(++current);
+        };
+
+        await renderPage(current);
+      }).catch(() => {
+        status.textContent = 'Не удалось загрузить PDF.';
+      });
+    } else {
+      status.textContent = 'Этот формат пока не поддерживается.';
+    }
+  </script>
+</body>
+</html>
