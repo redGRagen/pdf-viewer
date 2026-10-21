@@ -1,174 +1,228 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Просмотр документа</title>
-
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #eee;
-    }
-
-    #toolbar {
-      display: none;
-      position: sticky;
-      top: 0;
-      padding: 12px;
-      background: #222;
-      color: white;
-      justify-content: center;
-      align-items: center;
-      gap: 14px;
-      z-index: 2;
-    }
-
-    button {
-      padding: 8px 12px;
-      cursor: pointer;
-    }
-
-    #status {
-      padding: 20px;
-      text-align: center;
-    }
-
-    #viewer {
-      padding: 16px;
-      text-align: center;
-    }
-
-    #viewer img {
-      display: block;
-      max-width: 100%;
-      max-height: calc(100vh - 32px);
-      height: auto;
-      object-fit: contain;
-      margin: 0 auto;
-    }
-
-    #viewer canvas {
-      display: block;
-      max-width: 100%;
-      height: auto;
-      margin: 0 auto 16px;
-      background: white;
-      box-shadow: 0 2px 8px #aaa;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Просмотр документа</title>
+<style>
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  font-family: Arial, sans-serif;
+  overflow: hidden;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  background: #e9e9e9;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: #333;
+  color: white;
+  flex-shrink: 0;
+}
+button {
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+button:hover { background: #ddd; }
+#zoomValue {
+  min-width: 54px;
+  text-align: center;
+  font-size: 14px;
+}
+#viewer {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+#viewer.dragging { cursor: grabbing; }
+#image {
+  position: absolute;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-drag: none;
+  display: none;
+}
+#pdfFrame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: none;
+  background: white;
+}
+#message {
+  padding: 24px;
+  text-align: center;
+}
+</style>
 </head>
-
 <body>
-  <div id="toolbar">
-    <button id="prev">← Назад</button>
-    <span>
-      Страница <span id="page">1</span>
-      / <span id="total">1</span>
-    </span>
-    <button id="next">Вперёд →</button>
-  </div>
 
-  <div id="status">Загружаем файл…</div>
-  <div id="viewer"></div>
+<div class="toolbar">
+  <button id="minus" type="button">−</button>
+  <span id="zoomValue">100%</span>
+  <button id="plus" type="button">+</button>
+  <button id="fit" type="button">Вписать</button>
+  <button id="actual" type="button">100%</button>
+  <button id="full" type="button">⛶ Экран</button>
+</div>
 
-  <script type="module">
-    const params = new URLSearchParams(location.search);
-    const file = params.get('file') || 'document.pdf';
+<div id="viewer">
+  <img id="image" alt="Просматриваемое изображение">
+  <iframe id="pdfFrame" title="Просмотр PDF"></iframe>
+  <div id="message" hidden></div>
+</div>
 
-    const status = document.getElementById('status');
-    const viewer = document.getElementById('viewer');
-    const toolbar = document.getElementById('toolbar');
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const file = params.get('file') || 'document.pdf';
+  const image = document.getElementById('image');
+  const viewer = document.getElementById('viewer');
+  const pdfFrame = document.getElementById('pdfFrame');
+  const zoomValue = document.getElementById('zoomValue');
+  const message = document.getElementById('message');
 
-    const ext = file.split('.').pop().toLowerCase();
+  let scale = 1, x = 0, y = 0;
+  let startX = 0, startY = 0, dragging = false;
+  let fitScale = 1;
 
-    if (!/^[a-zA-Z0-9._-]+$/.test(file)) {
-      status.textContent = 'Некорректное имя файла.';
-      throw new Error('Invalid filename');
-    }
+  const isImage = /\.(jpe?g|png|gif|webp|bmp)$/i.test(file);
 
-    if (['png', 'jpg', 'jpeg'].includes(ext)) {
-      const img = document.createElement('img');
-      img.alt = 'Просматриваемое изображение';
-      img.src = file;
+  if (isImage) {
+    image.src = file;
+    image.style.display = 'block';
 
-      img.onload = () => {
-        status.textContent = '';
-        viewer.replaceChildren(img);
-      };
+    image.onload = () => {
+      fitScale = Math.min(
+        viewer.clientWidth / image.naturalWidth,
+        viewer.clientHeight / image.naturalHeight
+      );
+      scale = fitScale;
+      x = (viewer.clientWidth - image.naturalWidth * scale) / 2;
+      y = (viewer.clientHeight - image.naturalHeight * scale) / 2;
+      update();
+    };
 
-      img.onerror = () => {
-        status.textContent = 'Не удалось загрузить изображение.';
-      };
-    } else if (ext === 'pdf') {
-      status.textContent = 'Загружаем PDF…';
+    image.onerror = () => {
+      message.hidden = false;
+      message.textContent = 'Не удалось загрузить изображение. Проверьте имя файла.';
+    };
+  } else if (/\.pdf$/i.test(file)) {
+    pdfFrame.src =
+      'https://mozilla.github.io/pdf.js/web/viewer.html?file=' +
+      encodeURIComponent(new URL(file, location.href).href);
+    pdfFrame.style.display = 'block';
+    document.querySelectorAll('.toolbar button, #zoomValue')
+      .forEach(el => el.style.display = 'none');
+  } else {
+    message.hidden = false;
+    message.textContent = 'Поддерживаются JPG, PNG и PDF.';
+  }
 
-      import(
-        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'
-      ).then(async pdfjsLib => {
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+  function update() {
+    image.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    zoomValue.textContent = Math.round(scale * 100) + '%';
+  }
 
-        const pdf = await pdfjsLib.getDocument(file).promise;
-        let current = 1;
-        let rendering = false;
+  function zoom(factor) {
+    const cx = viewer.clientWidth / 2;
+    const cy = viewer.clientHeight / 2;
+    x = cx - (cx - x) * factor;
+    y = cy - (cy - y) * factor;
+    scale = Math.max(0.05, Math.min(10, scale * factor));
+    update();
+  }
 
-        toolbar.style.display = 'flex';
+  document.getElementById('plus').onclick = () => zoom(1.25);
+  document.getElementById('minus').onclick = () => zoom(0.8);
 
-        document.getElementById('total').textContent = pdf.numPages;
+  document.getElementById('fit').onclick = () => {
+    scale = Math.min(
+      viewer.clientWidth / image.naturalWidth,
+      viewer.clientHeight / image.naturalHeight
+    );
+    x = (viewer.clientWidth - image.naturalWidth * scale) / 2;
+    y = (viewer.clientHeight - image.naturalHeight * scale) / 2;
+    update();
+  };
 
-        async function renderPage(n) {
-          if (rendering) return;
-          rendering = true;
+  document.getElementById('actual').onclick = () => {
+    scale = 1;
+    x = (viewer.clientWidth - image.naturalWidth) / 2;
+    y = (viewer.clientHeight - image.naturalHeight) / 2;
+    update();
+  };
 
-          try {
-            const page = await pdf.getPage(n);
-            const original = page.getViewport({ scale: 1 });
-            const scale = Math.min(
-              (window.innerWidth - 32) / original.width,
-              1.8
-            );
-            const viewport = page.getViewport({ scale });
-
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-
-            viewer.replaceChildren(canvas);
-            await page.render({
-              canvasContext: ctx,
-              viewport
-            }).promise;
-
-            document.getElementById('page').textContent = n;
-            status.textContent = '';
-          } catch (e) {
-            status.textContent = 'Ошибка отображения страницы PDF.';
-          } finally {
-            rendering = false;
-          }
-        }
-
-        document.getElementById('prev').onclick = () => {
-          if (current > 1 && !rendering) renderPage(--current);
-        };
-
-        document.getElementById('next').onclick = () => {
-          if (current < pdf.numPages && !rendering) renderPage(++current);
-        };
-
-        await renderPage(current);
-      }).catch(() => {
-        status.textContent = 'Не удалось загрузить PDF.';
-      });
+  document.getElementById('full').onclick = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.();
     } else {
-      status.textContent = 'Этот формат пока не поддерживается.';
+      document.exitFullscreen?.();
     }
-  </script>
+  };
+
+  viewer.addEventListener('pointerdown', e => {
+    if (!isImage || e.target !== image) return;
+    dragging = true;
+    startX = e.clientX - x;
+    startY = e.clientY - y;
+    viewer.classList.add('dragging');
+    viewer.setPointerCapture(e.pointerId);
+  });
+
+  viewer.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    x = e.clientX - startX;
+    y = e.clientY - startY;
+    update();
+  });
+
+  function stopDrag() {
+    dragging = false;
+    viewer.classList.remove('dragging');
+  }
+  viewer.addEventListener('pointerup', stopDrag);
+  viewer.addEventListener('pointercancel', stopDrag);
+
+  viewer.addEventListener('wheel', e => {
+    if (!isImage) return;
+    e.preventDefault();
+    const oldScale = scale;
+    scale = Math.max(0.05, Math.min(10,
+      scale * (e.deltaY < 0 ? 1.12 : 0.89)
+    ));
+    const rect = viewer.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    x = mx - (mx - x) * scale / oldScale;
+    y = my - (my - y) * scale / oldScale;
+    update();
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    if (isImage && image.complete && image.naturalWidth) {
+      document.getElementById('fit').click();
+    }
+  });
+})();
+</script>
 </body>
 </html>
