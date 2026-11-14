@@ -103,6 +103,13 @@ const songFile = "audio.mp3";
     const progress = document.getElementById("progress");
     const time = document.getElementById("time");
     const volume = document.getElementById("volume");
+    const songTitleElement = document.getElementById("songTitle");
+const download = document.getElementById("download");
+
+songTitleElement.textContent = songTitle;
+audio.src = songFile;
+download.href = songFile;
+download.download = songTitle + ".mp3";
 
     function formatTime(seconds) {
       if (!Number.isFinite(seconds)) return "0:00";
