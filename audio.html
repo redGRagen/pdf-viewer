@@ -109,7 +109,7 @@ const download = document.getElementById("download");
 songTitleElement.textContent = songTitle;
 audio.src = songFile;
 download.href = songFile;
-download.download = songTitle + ".mp3";
+download.download = "TEST.mp3";
 
     function formatTime(seconds) {
       if (!Number.isFinite(seconds)) return "0:00";
