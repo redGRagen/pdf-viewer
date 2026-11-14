@@ -79,7 +79,7 @@
 <body>
 
   <div class="player">
-    <div class="song-title">Шуми, Шумейка</div>
+    <div class="song-title" id="songTitle"></div>
     <div class="controls">
       <button id="play">▶</button>
       <input type="range" id="progress" value="0" min="0" max="100">
@@ -96,7 +96,7 @@
   <audio id="audio" preload="metadata" src="audio.mp3"></audio>
 
   <script>
-    const songTitle = "Шуми, Шумейка";
+    const songTitle = "TEST";
 const songFile = "audio.mp3";
     const audio = document.getElementById("audio");
     const play = document.getElementById("play");
